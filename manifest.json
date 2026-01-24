@@ -1,0 +1,9 @@
+[
+    {
+      "name": "Playbar Control",
+      "description": "Toggle button that controls playbar UI rearrangements and customizations",
+      "main": "marketplace/playbar-toggle.js",
+      "readme": "README.md"
+    }
+]
+
