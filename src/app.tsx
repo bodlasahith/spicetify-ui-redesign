@@ -102,6 +102,159 @@ function toggleVolumeSlider(): void {
 }
 
 /**
+ * Toggles track info popup visibility
+ */
+function toggleTrackInfoPopup(): void {
+  const popup = document.querySelector('.track-info-popup') as HTMLElement;
+  if (popup) {
+    popup.classList.toggle('visible');
+    updateTrackInfoPopup();
+  }
+}
+
+/**
+ * Gets the original track title element from the Spotify playbar
+ */
+function getOriginalTrackElement(): HTMLAnchorElement | null {
+  return document.querySelector('.main-trackInfo-name a[href]') as HTMLAnchorElement;
+}
+
+/**
+ * Gets the original artist elements from the Spotify playbar
+ */
+function getOriginalArtistElements(): NodeListOf<HTMLAnchorElement> {
+  return document.querySelectorAll('.main-trackInfo-artists a[href]');
+}
+
+/**
+ * Simulates a click on the original track title element
+ */
+function clickOriginalTrackTitle(): void {
+  const originalTrackElement = getOriginalTrackElement();
+  if (originalTrackElement) {
+    originalTrackElement.click();
+    console.log("[Custom Playbar] Clicked original track title");
+  } else {
+    console.log("[Custom Playbar] Could not find original track element");
+  }
+}
+
+/**
+ * Simulates a click on an original artist element by index
+ */
+function clickOriginalArtist(index: number): void {
+  const artistElements = getOriginalArtistElements();
+  if (artistElements[index]) {
+    artistElements[index].click();
+    console.log("[Custom Playbar] Clicked original artist at index:", index);
+  } else {
+    console.log("[Custom Playbar] Could not find original artist element at index:", index);
+  }
+}
+
+/**
+ * Opens the context menu for the current track
+ */
+function openTrackContextMenu(event: MouseEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+  
+  // Try to find the original track row or title element
+  const trackElement = document.querySelector('.main-trackInfo-name a[href]') as HTMLElement;
+  
+  if (trackElement) {
+    // Create and dispatch a right-click event
+    const contextMenuEvent = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 2,
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+    
+    trackElement.dispatchEvent(contextMenuEvent);
+    console.log("[Custom Playbar] Opened track context menu");
+  } else {
+    console.log("[Custom Playbar] Could not find track element for context menu");
+  }
+}
+
+/**
+ * Updates track info popup with current track details
+ */
+function updateTrackInfoPopup(): void {
+  if (!Spicetify?.Player?.data?.item) return;
+  
+  const track = Spicetify.Player.data.item;
+  const artists = track.artists || [];
+  const coverArt = track.images?.[0]?.url || track.album?.images?.[0]?.url || '';
+  
+  const coverImg = document.querySelector('.track-popup-cover') as HTMLImageElement;
+  const trackName = document.querySelector('.track-popup-name') as HTMLElement;
+  const trackArtist = document.querySelector('.track-popup-artist') as HTMLElement;
+  
+  if (coverImg && coverArt) {
+    coverImg.src = coverArt;
+    
+    // Add right-click context menu handler to cover image
+    coverImg.oncontextmenu = (e) => {
+      openTrackContextMenu(e as MouseEvent);
+    };
+  }
+  if (trackName) {
+    const trackTitle = track.name || 'Unknown Track';
+    // Display as plain text but make it clickable
+    trackName.textContent = trackTitle;
+    // Remove any existing click handlers and add the new one
+    trackName.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clickOriginalTrackTitle();
+    };
+  }
+  if (trackArtist) {
+    // Clear the container
+    trackArtist.innerHTML = '';
+    
+    if (artists.length > 0) {
+      // Create clickable spans for each artist
+      artists.forEach((artist: any, index: number) => {
+        const artistSpan = document.createElement('span');
+        artistSpan.textContent = artist.name || 'Unknown Artist';
+        artistSpan.className = 'artist-name-link';
+        artistSpan.style.cursor = 'pointer';
+        artistSpan.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clickOriginalArtist(index);
+        };
+        
+        trackArtist.appendChild(artistSpan);
+        
+        // Add comma separator if not the last artist
+        if (index < artists.length - 1) {
+          const separator = document.createElement('span');
+          separator.textContent = ', ';
+          separator.className = 'artist-separator';
+          trackArtist.appendChild(separator);
+        }
+      });
+    } else {
+      trackArtist.textContent = 'Unknown Artist';
+    }
+  }
+}
+
+/**
+ * Handles track info click without closing immediately
+ */
+function handleTrackInfoClick(event: MouseEvent): void {
+  event.stopPropagation();
+  toggleTrackInfoPopup();
+}
+
+/**
  * Updates volume slider position and icon
  */
 function updateVolumeSlider(): void {
@@ -220,6 +373,9 @@ function updateTrackInfo(): void {
       trackInfoEl.textContent = `${title} - ${artists}`;
     }
   }
+  
+  // Also update the track info popup when track changes
+  updateTrackInfoPopup();
 }
 
 /**
@@ -345,15 +501,70 @@ function createCustomPlaybar(): HTMLElement {
   progressContainer.innerHTML = `
     <span class="playbar-time playbar-time-current">0:00</span>
     <div class="playbar-progress-bar">
-      <div class="playbar-progress-fill"></div>
+      <div class="playbar-progress-fill">
+        <div class="playbar-progress-thumb"></div>
+      </div>
     </div>
     <span class="playbar-time playbar-time-total">0:00</span>
   `;
   
-  // Add click handler for seeking
+  // Add click and drag handlers for seeking
   const progressBar = progressContainer.querySelector('.playbar-progress-bar') as HTMLElement;
+  const progressThumb = progressContainer.querySelector('.playbar-progress-thumb') as HTMLElement;
+  
   if (progressBar) {
-    progressBar.addEventListener('click', seekToPosition);
+    let isProgressDragging = false;
+    
+    const handleProgressSeek = (e: MouseEvent) => {
+      const rect = progressBar.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, x / rect.width));
+      const duration = Spicetify.Player.getDuration();
+      const newPosition = duration * percentage;
+      
+      Spicetify.Player.seek(newPosition);
+      updateProgressBar();
+    };
+    
+    // Click anywhere on the bar to seek
+    progressBar.addEventListener('click', (e) => {
+      if (!isProgressDragging) {
+        handleProgressSeek(e);
+      }
+    });
+    
+    // Thumb drag functionality
+    if (progressThumb) {
+      progressThumb.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isProgressDragging = true;
+        handleProgressSeek(e);
+      });
+    }
+    
+    // Bar drag functionality
+    progressBar.addEventListener('mousedown', (e) => {
+      if (e.target === progressBar || (e.target as HTMLElement).classList.contains('playbar-progress-fill')) {
+        e.preventDefault();
+        isProgressDragging = true;
+        handleProgressSeek(e);
+      }
+    });
+    
+    // Handle dragging
+    document.addEventListener('mousemove', (e) => {
+      if (isProgressDragging) {
+        e.preventDefault();
+        handleProgressSeek(e);
+      }
+    });
+    
+    document.addEventListener('mouseup', () => {
+      if (isProgressDragging) {
+        isProgressDragging = false;
+      }
+    });
   }
   
   playbar.appendChild(progressContainer);
@@ -377,43 +588,129 @@ function createCustomPlaybar(): HTMLElement {
   volumeSliderContainer.addEventListener('click', (e) => e.stopPropagation());
   volumeSliderContainer.innerHTML = `
     <div class="volume-slider-bar">
-      <div class="volume-slider-fill"></div>
+      <div class="volume-slider-fill">
+        <div class="volume-slider-thumb"></div>
+      </div>
     </div>
   `;
   
   const volumeSliderBar = volumeSliderContainer.querySelector('.volume-slider-bar') as HTMLElement;
+  const volumeThumb = volumeSliderContainer.querySelector('.volume-slider-thumb') as HTMLElement;
+  
   if (volumeSliderBar) {
-    volumeSliderBar.addEventListener('click', setVolumeFromSlider);
+    let isVolumeDragging = false;
     
-    // Add drag support
-    let isDragging = false;
-    volumeSliderBar.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      setVolumeFromSlider(e as MouseEvent);
+    const handleVolumeSet = (e: MouseEvent) => {
+      const rect = volumeSliderBar.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, x / rect.width));
+      
+      Spicetify.Player.setVolume(percentage);
+      updateVolumeSlider();
+    };
+    
+    // Click anywhere on the bar to set volume
+    volumeSliderBar.addEventListener('click', (e) => {
+      if (!isVolumeDragging) {
+        handleVolumeSet(e);
+      }
     });
     
+    // Thumb drag functionality
+    if (volumeThumb) {
+      volumeThumb.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isVolumeDragging = true;
+        handleVolumeSet(e);
+      });
+    }
+    
+    // Bar drag functionality
+    volumeSliderBar.addEventListener('mousedown', (e) => {
+      if (e.target === volumeSliderBar || (e.target as HTMLElement).classList.contains('volume-slider-fill')) {
+        e.preventDefault();
+        e.stopPropagation();
+        isVolumeDragging = true;
+        handleVolumeSet(e);
+      }
+    });
+    
+    // Handle dragging
     document.addEventListener('mousemove', (e) => {
-      if (isDragging) {
-        const rect = volumeSliderBar.getBoundingClientRect();
-        if (e.clientX >= rect.left && e.clientX <= rect.right) {
-          setVolumeFromSlider(e as MouseEvent);
-        }
+      if (isVolumeDragging) {
+        e.preventDefault();
+        handleVolumeSet(e);
       }
     });
     
     document.addEventListener('mouseup', () => {
-      isDragging = false;
+      if (isVolumeDragging) {
+        isVolumeDragging = false;
+      }
     });
   }
   
   volumeWrapper.appendChild(volumeSliderContainer);
   playbar.appendChild(volumeWrapper);
 
-  // Track Info (display only)
+  // Track Info with popup (wrapped for popover positioning)
+  const trackInfoWrapper = document.createElement('div');
+  trackInfoWrapper.className = 'track-info-wrapper';
+  
   const trackInfo = document.createElement("div");
   trackInfo.className = "playbar-track-info";
   trackInfo.innerHTML = `<span class="playbar-track-name">No track playing</span>`;
-  playbar.appendChild(trackInfo);
+  trackInfo.style.cursor = 'pointer';
+  trackInfo.addEventListener('click', (e) => handleTrackInfoClick(e as MouseEvent));
+  trackInfoWrapper.appendChild(trackInfo);
+
+  // Track info popup
+  const trackInfoPopup = document.createElement('div');
+  trackInfoPopup.className = 'track-info-popup';
+  trackInfoPopup.addEventListener('click', (e) => e.stopPropagation());
+  trackInfoPopup.innerHTML = `
+    <div class="track-popup-content">
+      <div class="track-popup-cover-container">
+        <img class="track-popup-cover" src="" alt="Cover art" />
+      </div>
+      <div class="track-popup-details">
+        <div class="track-popup-name">Track Name</div>
+        <div class="track-popup-artist">Artist Name</div>
+      </div>
+      <div class="track-popup-actions">
+        <button class="track-popup-btn" data-action="like" title="Add to Liked Songs">
+          <svg viewBox="0 0 16 16" class="track-popup-icon">
+            <path d="M15.724 4.22A4.313 4.313 0 0 0 12.192.814a4.269 4.269 0 0 0-3.622 1.13.837.837 0 0 1-1.14 0 4.272 4.272 0 0 0-6.21 5.855l5.916 7.05a1.128 1.128 0 0 0 1.727 0l5.916-7.05a4.228 4.228 0 0 0 .945-3.577z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `;
+  
+  // Add action button handlers
+  const likeBtn = trackInfoPopup.querySelector('[data-action="like"]') as HTMLButtonElement;
+  const queueBtn = trackInfoPopup.querySelector('[data-action="queue"]') as HTMLButtonElement;
+  
+  if (likeBtn) {
+    likeBtn.addEventListener('click', () => {
+      Spicetify.Player.toggleHeart();
+      console.log('[Custom Playbar] Toggled like');
+    });
+  }
+  
+  if (queueBtn) {
+    queueBtn.addEventListener('click', () => {
+      const addToQueueBtn = document.querySelector('[data-testid="add-to-queue-button"]') as HTMLButtonElement;
+      if (addToQueueBtn) {
+        addToQueueBtn.click();
+        console.log('[Custom Playbar] Added to queue');
+      }
+    });
+  }
+  
+  trackInfoWrapper.appendChild(trackInfoPopup);
+  playbar.appendChild(trackInfoWrapper);
 
   // Lyrics button
   playbar.appendChild(
@@ -599,6 +896,28 @@ function injectCustomPlaybarStyles(): void {
       background: var(--text-bright-accent, #1db954);
       border-radius: 2px;
       width: 0%;
+      position: relative;
+    }
+
+    .playbar-progress-thumb {
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: grab;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      pointer-events: auto;
+      z-index: 10;
+    }
+
+    .playbar-progress-thumb:active {
+      cursor: grabbing;
     }
 
     .playbar-progress-bar:hover .playbar-progress-fill {
@@ -606,7 +925,17 @@ function injectCustomPlaybarStyles(): void {
       box-shadow: 0 0 8px var(--text-bright-accent, #1db954);
     }
 
+    .playbar-progress-bar:hover .playbar-progress-thumb {
+      opacity: 1;
+    }
+
     /* Track info */
+    .track-info-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
     .playbar-track-info {
       min-width: 200px;
       max-width: 250px;
@@ -618,11 +947,128 @@ function injectCustomPlaybarStyles(): void {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      transition: background 0.2s ease;
+    }
+
+    .playbar-track-info:hover {
+      background: rgba(255, 255, 255, 0.1);
     }
 
     .playbar-track-name {
       display: block;
       color: rgba(255, 255, 255, 0.8);
+    }
+
+    /* Track info popup */
+    .track-info-popup {
+      position: absolute;
+      bottom: 64px;
+      left: 0;
+      transform: translateY(10px);
+      background: rgba(40, 40, 40, 0.98);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s ease;
+      pointer-events: none;
+      z-index: 10000;
+      min-width: 300px;
+    }
+
+    .track-info-popup.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      pointer-events: all;
+    }
+
+    .track-popup-content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .track-popup-cover-container {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .track-popup-cover {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .track-popup-details {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .track-popup-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      line-height: 1.4;
+      cursor: pointer;
+      transition: color 0.2s ease;
+    }
+
+    .track-popup-name:hover {
+      color: var(--spice-button, #1db954);
+    }
+
+    .track-popup-artist {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .artist-name-link {
+      transition: color 0.2s ease;
+    }
+
+    .artist-name-link:hover {
+      color: var(--spice-button, #1db954);
+    }
+
+    .artist-separator {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .track-popup-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .track-popup-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .track-popup-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.1);
+    }
+
+    .track-popup-icon {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
     }
 
     /* Scrollbar styling for custom playbar */
@@ -689,11 +1135,35 @@ function injectCustomPlaybarStyles(): void {
       border-radius: 3px;
       width: 100%;
       transition: width 0.1s ease;
+      position: relative;
+    }
+
+    .volume-slider-thumb {
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: grab;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      pointer-events: auto;
+      z-index: 10;
+    }
+
+    .volume-slider-thumb:active {
+      cursor: grabbing;
     }
 
     .volume-slider-bar:hover .volume-slider-fill {
       background: var(--text-bright-accent, #1db954);
       box-shadow: 0 0 8px var(--text-bright-accent, #1db954);
+    }
+
+    .volume-slider-bar:hover .volume-slider-thumb {
+      box-shadow: 0 0 8px rgba(29, 185, 84, 0.6);
     }
 
     /* Adjust body to account for fixed playbar */
@@ -827,6 +1297,7 @@ function setupEventListeners(): void {
     console.log("[Custom Playbar] Song changed");
     updateTrackInfo();
     updateProgressBar();
+    updateTrackInfoPopup();
   });
 
   // Listen for playback state changes
@@ -850,6 +1321,7 @@ function setupEventListeners(): void {
     updateShuffleButton();
     updateRepeatButton();
     updateVolumeSlider();
+    updateTrackInfoPopup();
   }, 500);
 
   // Close volume slider when clicking outside
@@ -859,6 +1331,15 @@ function setupEventListeners(): void {
     if (slider && volumeBtn && slider.classList.contains('visible')) {
       if (!slider.contains(e.target as Node) && !volumeBtn.contains(e.target as Node)) {
         slider.classList.remove('visible');
+      }
+    }
+    
+    // Close track info popup when clicking outside
+    const trackPopup = document.querySelector('.track-info-popup');
+    const trackInfo = document.querySelector('.playbar-track-info');
+    if (trackPopup && trackInfo && trackPopup.classList.contains('visible')) {
+      if (!trackPopup.contains(e.target as Node) && !trackInfo.contains(e.target as Node)) {
+        trackPopup.classList.remove('visible');
       }
     }
   });
