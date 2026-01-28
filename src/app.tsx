@@ -1361,6 +1361,545 @@ function updateAllStates(): void {
   updateRepeatButton();
 }
 
+// ============================================
+// CUSTOM LIBRARY PAGE
+// ============================================
+
+interface LibraryCategory {
+  name: string;
+  items: Array<{
+    title: string;
+    href: string;
+    color: string;
+    image: string;
+  }>;
+}
+
+const libraryCategories: LibraryCategory[] = [
+  {
+    name: "Main Categories",
+    items: [
+      { title: "Music", href: "/genre/0JQ5DAqbMKFSi39LMRT0Cy", color: "rgb(220, 20, 140)", image: "https://i.scdn.co/image/ab67fb8200008e2c21cf047fac53f26680dcad78" },
+      { title: "Podcasts", href: "/genre/0JQ5DArNBzkmxXHCqFLx2J", color: "rgb(0, 100, 80)", image: "https://i.scdn.co/image/ab67fb8200005caf6cc0187b9ea66de1525c3cec" },
+      { title: "Audiobooks", href: "/genre/0JQ5DAqbMKFKLfwjuJMoNC", color: "rgb(30, 50, 100)", image: "https://i.scdn.co/image/ab67fb8200005cafa6152f62518b4c3251858b21" },
+      { title: "Live Events", href: "/concerts", color: "rgb(132, 0, 231)", image: "https://concerts.spotifycdn.com/images/live-events_category-image.jpg" },
+    ]
+  },
+  {
+    name: "Genres",
+    items: [
+      { title: "Hip-Hop", href: "/genre/0JQ5DAqbMKFQ00XGBls6ym", color: "rgb(71, 125, 149)", image: "https://i.scdn.co/image/ab67fb8200005caf5f3752b3234e724f9cd6056f" },
+      { title: "Pop", href: "/genre/0JQ5DAqbMKFEC4WFtoNRpw", color: "rgb(175, 40, 150)", image: "https://i.scdn.co/image/ab67fb8200005caf6171b9b0039f71854d4cd3c3" },
+      { title: "Country", href: "/genre/0JQ5DAqbMKFKLfwjuJMoNC", color: "rgb(216, 64, 0)", image: "https://i.scdn.co/image/ab67fb8200005caf8573129e9a69a7482eca7879" },
+      { title: "Rock", href: "/genre/0JQ5DAqbMKFDXXwE9BDJAr", color: "rgb(0, 100, 80)", image: "https://i.scdn.co/image/ab67fb8200005cafda4c849095796a9e5d2c4ddb" },
+      { title: "R&B", href: "/genre/0JQ5DAqbMKFEZPnFQSFB1T", color: "rgb(186, 93, 7)", image: "https://i.scdn.co/image/ab67fb8200005caff4e38be86ca48a3b10884ae3" },
+      { title: "Dance/Electronic", href: "/genre/0JQ5DAqbMKFHOzuVTgTizF", color: "rgb(71, 125, 149)", image: "https://i.scdn.co/image/ab67fb8200005caf26ada793217994216c79dad8" },
+      { title: "Latin", href: "/genre/0JQ5DAqbMKFxXaXKP7zcDp", color: "rgb(175, 40, 150)", image: "https://i.scdn.co/image/ab67fb8200008e2c63003ca8561d50e223f5bcd8" },
+      { title: "Jazz", href: "/genre/0JQ5DAqbMKFAj5xb0fwo9m", color: "rgb(141, 103, 171)", image: "https://i.scdn.co/image/ab67fb8200005cafa1bb187ec2f4606aa7101bad" },
+      { title: "Metal", href: "/genre/0JQ5DAqbMKFDkd668ypn6O", color: "rgb(233, 20, 41)", image: "https://i.scdn.co/image/ab67fb8200005cafefa737b67ec51ec989f5a51d" },
+      { title: "Classical", href: "/genre/0JQ5DAqbMKFPrEiAOxgac3", color: "rgb(125, 75, 50)", image: "https://i.scdn.co/image/ab67fb8200005caf4597370d1058e1ec3c1a56fa" },
+      { title: "Indie", href: "/genre/0JQ5DAqbMKFCWjUTdzaG0e", color: "rgb(230, 30, 50)", image: "https://i.scdn.co/image/ab67fb8200005caf03086007caec2cceb4bce6d8" },
+      { title: "Alternative", href: "/genre/0JQ5DAqbMKFTtlLYUHv8bT", color: "rgb(225, 51, 0)", image: "https://i.scdn.co/image/ab67fb8200005caf106e29a9f294cb4265da6af9" },
+      { title: "K-pop", href: "/genre/0JQ5DAqbMKFGvOw3O4nLAf", color: "rgb(230, 30, 50)", image: "https://i.scdn.co/image/ab67fb8200005caf4b42030ee01cf793663dbb73" },
+    ]
+  },
+  {
+    name: "Moods & Activities",
+    items: [
+      { title: "Workout", href: "/genre/0JQ5DAqbMKFAXlCG6QvYQ4", color: "rgb(119, 119, 119)", image: "https://i.scdn.co/image/ab67fb8200005caf6af6d83c78493644c9b0627b" },
+      { title: "Party", href: "/genre/0JQ5DAqbMKFA3gk1Sm6Vjf", color: "rgb(141, 103, 171)", image: "https://i.scdn.co/image/ab67fb8200005caf0b0d0bfac454671832311615" },
+      { title: "Chill", href: "/genre/0JQ5DAqbMKFFzDl7qN9Apr", color: "rgb(176, 98, 57)", image: "https://i.scdn.co/image/ab67fb8200005caf330ca3a3bfaf8b18407fb33e" },
+      { title: "Sleep", href: "/genre/0JQ5DAqbMKFCuoRTxhYWow", color: "rgb(30, 50, 100)", image: "https://i.scdn.co/image/ab67fb8200005caf1cef0cee1e498abb8e74955f" },
+      { title: "Focus", href: "/genre/0JQ5DAqbMKFCbimwdOYlsl", color: "rgb(165, 103, 82)", image: "https://i.scdn.co/image/ab67fb8200005caf9a27506d5dde68b9da373196" },
+      { title: "Love", href: "/genre/0JQ5DAqbMKFAUsdyVjCQuL", color: "rgb(220, 20, 140)", image: "https://i.scdn.co/image/ab67fb8200005caf21c9a95a2702ce535fb07915" },
+      { title: "Mood", href: "/genre/0JQ5DAqbMKFzHmL4tf05da", color: "rgb(225, 17, 140)", image: "https://i.scdn.co/image/ab67fb8200005cafe542e9b59b1d2ae04b46b91c" },
+      { title: "Gaming", href: "/genre/0JQ5DAqbMKFCfObibaOZbv", color: "rgb(232, 17, 91)", image: "https://i.scdn.co/image/ab67fb8200005caf26dd3719e8824756914ae61f" },
+      { title: "Travel", href: "/genre/0JQ5DAqbMKFAQy4HL4XU2D", color: "rgb(13, 114, 237)", image: "https://i.scdn.co/image/ab67fb8200005caf879a886d22672d9b5b987746" },
+      { title: "Wellness", href: "/genre/0JQ5DAqbMKFLb2EqgLtpjC", color: "rgb(20, 138, 8)", image: "https://i.scdn.co/image/ab67fb8200005cafd4a8da930bccd56ebd7e48b0" },
+      { title: "Student", href: "/genre/0JQ5DAqbMKFJw7QLnM27p6", color: "rgb(175, 40, 150)", image: "https://i.scdn.co/image/ab67fb8200005cafdad1281e13697e8d8cf8f347" },
+    ]
+  },
+  {
+    name: "Curated Collections",
+    items: [
+      { title: "New Releases", href: "/genre/0JQ5DAqbMKFGaKcChsSgUO", color: "rgb(186, 93, 7)", image: "https://i.scdn.co/image/ab67fb8200005cafdccec075f58c20e8824f052c" },
+      { title: "Charts", href: "/genre/0JQ5DAudkNjCgYMM0TZXDw", color: "rgb(141, 103, 171)", image: "https://charts-images.scdn.co/assets/locale_en/regional/weekly/region_global_default.jpg" },
+      { title: "Trending", href: "/genre/0JQ5DAqbMKFQIL0AXnG5AK", color: "rgb(176, 40, 151)", image: "https://i.scdn.co/image/ab67fb8200005caf8e97784ff1e12e67ae922715" },
+      { title: "Fresh Finds", href: "/genre/0JQ5DAqbMKFImHYGo3eTSg", color: "rgb(255, 0, 144)", image: "https://i.scdn.co/image/ab67fb8200005cafcc1499bbb8565f490858c2bc" },
+      { title: "Decades", href: "/genre/0JQ5DAqbMKFIVNxQgRNSg0", color: "rgb(165, 103, 82)", image: "https://i.scdn.co/image/ab67fb8200005cafb7e805033eb938aa75d09336" },
+      { title: "Made For You", href: "/genre/0JQ5DAt0tbjZptfcdMSKl3", color: "rgb(30, 50, 100)", image: "https://pickasso.spotifycdn.com/image/ab67c0de0000deef/dt/v1/img/topic/pop/1McMsnEElThX1knmY4oliG/en" },
+      { title: "Discover", href: "/genre/0JQ5DAtOnAEpjOgUKwXyxj", color: "rgb(141, 103, 171)", image: "https://pickasso.spotifycdn.com/image/ab67c0de0000deef/dt/v1/img/dw/cover/en" },
+    ]
+  },
+];
+
+/**
+ * Closes the library overlay
+ */
+function closeLibraryOverlay(): void {
+  const overlay = document.querySelector('.library-overlay') as HTMLElement;
+  if (overlay) {
+    overlay.classList.remove('visible');
+  }
+}
+
+/**
+ * Opens the library overlay
+ */
+function openLibraryOverlay(): void {
+  const overlay = document.querySelector('.library-overlay') as HTMLElement;
+  if (overlay) {
+    overlay.classList.add('visible');
+  }
+}
+
+/**
+ * Creates a carousel section with categories
+ */
+function createCarousel(category: LibraryCategory): HTMLElement {
+  const carouselContainer = document.createElement('div');
+  carouselContainer.className = 'library-carousel-section';
+
+  const title = document.createElement('h2');
+  title.className = 'library-carousel-title';
+  title.textContent = category.name;
+  carouselContainer.appendChild(title);
+
+  const carouselTrack = document.createElement('div');
+  carouselTrack.className = 'library-carousel-track';
+
+  category.items.forEach(item => {
+    const card = document.createElement('a');
+    card.href = item.href;
+    card.className = 'library-card';
+    card.style.backgroundColor = item.color;
+    card.innerHTML = `
+      <img src="${item.image}" alt="${item.title}" class="library-card-image" />
+      <span class="library-card-title">${item.title}</span>
+    `;
+    card.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      console.log("[Custom Library] Navigating to:", item.href, "Title:", item.title);
+      
+      // Try to find and click the original library item
+      const originalLink = document.querySelector(`a[href="${item.href}"]`) as HTMLAnchorElement;
+      
+      if (originalLink) {
+        console.log("[Custom Library] Found original link, clicking it");
+        closeLibraryOverlay();
+        // Simulate a click on the original item
+        originalLink.click();
+      } else {
+        // Fallback: navigate using hash if original not found
+        console.log("[Custom Library] Original link not found, using hash navigation");
+        closeLibraryOverlay();
+        window.location.hash = item.href;
+      }
+    });
+    carouselTrack.appendChild(card);
+  });
+
+  // Add scroll buttons
+  const scrollLeftBtn = document.createElement('button');
+  scrollLeftBtn.className = 'library-scroll-btn library-scroll-left';
+  scrollLeftBtn.innerHTML = '<svg viewBox="0 0 24 24" class="library-scroll-icon"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>';
+  scrollLeftBtn.addEventListener('click', () => {
+    carouselTrack.scrollBy({ left: -300, behavior: 'smooth' });
+  });
+
+  const scrollRightBtn = document.createElement('button');
+  scrollRightBtn.className = 'library-scroll-btn library-scroll-right';
+  scrollRightBtn.innerHTML = '<svg viewBox="0 0 24 24" class="library-scroll-icon"><path d="M10 6L8.59 7.41 12.17 11 8.59 14.59 10 16l6-6z" fill="currentColor"/></svg>';
+  scrollRightBtn.addEventListener('click', () => {
+    carouselTrack.scrollBy({ left: 300, behavior: 'smooth' });
+  });
+
+  const carouselWrapper = document.createElement('div');
+  carouselWrapper.className = 'library-carousel-wrapper';
+  carouselWrapper.appendChild(scrollLeftBtn);
+  carouselWrapper.appendChild(carouselTrack);
+  carouselWrapper.appendChild(scrollRightBtn);
+
+  carouselContainer.appendChild(carouselWrapper);
+  return carouselContainer;
+}
+
+/**
+ * Creates the library overlay
+ */
+function createLibraryOverlay(): HTMLElement {
+  const overlay = document.createElement('div');
+  overlay.className = 'library-overlay';
+
+  const container = document.createElement('div');
+  container.className = 'library-container';
+
+  const header = document.createElement('div');
+  header.className = 'library-header';
+  header.innerHTML = `
+    <h1>Browse All</h1>
+    <button class="library-close-btn" aria-label="Close">
+      <svg viewBox="0 0 24 24" class="library-close-icon"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/></svg>
+    </button>
+  `;
+  const closeBtn = header.querySelector('.library-close-btn') as HTMLButtonElement;
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeLibraryOverlay);
+  }
+  container.appendChild(header);
+
+  const content = document.createElement('div');
+  content.className = 'library-content';
+
+  libraryCategories.forEach(category => {
+    content.appendChild(createCarousel(category));
+  });
+
+  container.appendChild(content);
+  overlay.appendChild(container);
+
+  // Close overlay when clicking outside
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      closeLibraryOverlay();
+    }
+  });
+
+  return overlay;
+}
+
+/**
+ * Injects CSS styles for the custom library
+ */
+function injectLibraryStyles(): void {
+  let styleElement = document.getElementById("custom-library-styles");
+  if (!styleElement) {
+    styleElement = document.createElement("style");
+    styleElement.id = "custom-library-styles";
+    document.head.appendChild(styleElement);
+  }
+
+  const css = `
+    /* Library Overlay */
+    .library-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 9998;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .library-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* Library Container */
+    .library-container {
+      background: linear-gradient(135deg, rgba(30, 30, 30, 0.98) 0%, rgba(20, 20, 20, 0.98) 100%);
+      border-radius: 12px;
+      max-width: 90vw;
+      max-height: 90vh;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Library Header */
+    .library-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
+    }
+
+    .library-header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .library-close-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: #fff;
+    }
+
+    .library-close-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .library-close-icon {
+      width: 24px;
+      height: 24px;
+    }
+
+    /* Library Content */
+    .library-content {
+      overflow-y: auto;
+      flex: 1;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .library-content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .library-content::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    }
+
+    .library-content::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+
+    .library-content::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Carousel Section */
+    .library-carousel-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .library-carousel-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      padding: 0 12px;
+    }
+
+    /* Carousel Wrapper with scroll buttons */
+    .library-carousel-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .library-carousel-track {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      scroll-behavior: smooth;
+      padding: 0 4px;
+      flex: 1;
+      scroll-snap-type: x mandatory;
+    }
+
+    .library-carousel-track::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .library-carousel-track::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+    }
+
+    .library-carousel-track::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    /* Scroll Buttons */
+    .library-scroll-btn {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(29, 185, 84, 0.8);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      z-index: 2;
+    }
+
+    .library-scroll-btn:hover {
+      background: var(--text-bright-accent, #1db954);
+      transform: scale(1.1);
+    }
+
+    .library-scroll-btn:active {
+      transform: scale(0.95);
+    }
+
+    .library-scroll-left {
+      order: -1;
+    }
+
+    .library-scroll-icon {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Library Cards */
+    .library-card {
+      flex: 0 0 180px;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-start;
+      padding: 12px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+      scroll-snap-align: start;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .library-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.2));
+      z-index: 1;
+    }
+
+    .library-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .library-card:active {
+      transform: translateY(-2px);
+    }
+
+    .library-card-image {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    .library-card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      position: relative;
+      z-index: 2;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .library-container {
+        max-width: 95vw;
+        max-height: 95vh;
+      }
+
+      .library-card {
+        flex: 0 0 150px;
+      }
+
+      .library-carousel-title {
+        font-size: 16px;
+      }
+
+      .library-header h1 {
+        font-size: 24px;
+      }
+    }
+  `;
+
+  styleElement.textContent = css;
+}
+
+/**
+ * Sets up the library button listener
+ */
+function setupLibraryListener(): void {
+  // Create the library overlay and add it to the DOM
+  const overlay = createLibraryOverlay();
+  document.body.appendChild(overlay);
+
+  // Watch for the Browse button and hook into it
+  const observer = new MutationObserver(() => {
+    // Look for the Browse button by aria-label
+    const browseBtn = document.querySelector('button[aria-label="Browse"]') as HTMLButtonElement;
+    
+    if (browseBtn && !browseBtn.classList.contains('library-hooked')) {
+      browseBtn.classList.add('library-hooked');
+      
+      // Store the original click handler
+      const originalOnClick = browseBtn.onclick;
+      
+      // Replace with our custom handler
+      browseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openLibraryOverlay();
+        console.log("[Custom Library] Browse button clicked, opening library overlay");
+      }, true); // Use capture phase to intercept before other handlers
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // Also try to hook it immediately in case it already exists
+  setTimeout(() => {
+    const browseBtn = document.querySelector('button[aria-label="Browse"]') as HTMLButtonElement;
+    if (browseBtn && !browseBtn.classList.contains('library-hooked')) {
+      browseBtn.classList.add('library-hooked');
+      browseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openLibraryOverlay();
+        console.log("[Custom Library] Browse button clicked, opening library overlay");
+      }, true);
+    }
+  }, 500);
+}
+
 /**
  * Main function to initialize the extension
  */
@@ -1371,6 +1910,11 @@ async function main(): Promise<void> {
   }
 
   console.log("[Playbar Toggle] Initializing extension...");
+  
+  // Initialize custom library
+  injectLibraryStyles();
+  setupLibraryListener();
+  
   waitForPlaybar();
 }
 
