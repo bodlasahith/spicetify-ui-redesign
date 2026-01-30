@@ -1585,11 +1585,11 @@ function injectLibraryStyles(): void {
     /* Library Overlay */
     .library-overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
+      top: 60px;
+      left: 280px;
+      right: 280px;
+      bottom: 90px;
+      background: rgba(0, 0, 0, 0.95);
       z-index: 9998;
       opacity: 0;
       visibility: hidden;
@@ -1607,14 +1607,13 @@ function injectLibraryStyles(): void {
     /* Library Container */
     .library-container {
       background: linear-gradient(135deg, rgba(30, 30, 30, 0.98) 0%, rgba(20, 20, 20, 0.98) 100%);
-      border-radius: 12px;
-      max-width: 90vw;
-      max-height: 90vh;
+      border-radius: 0;
       width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+      border: none;
     }
 
     /* Library Header */
@@ -1870,16 +1869,20 @@ function setupLibraryListener(): void {
     if (browseBtn && !browseBtn.classList.contains('library-hooked')) {
       browseBtn.classList.add('library-hooked');
       
-      // Store the original click handler
-      const originalOnClick = browseBtn.onclick;
-      
-      // Replace with our custom handler
-      browseBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openLibraryOverlay();
+      // Add our handler AFTER the original one (don't prevent default)
+      // This allows the original library page to open, then we open our modal on top
+      browseBtn.addEventListener('click', () => {
         console.log("[Custom Library] Browse button clicked, opening library overlay");
-      }, true); // Use capture phase to intercept before other handlers
+        
+        // Wait a bit for the original library page to load
+        setTimeout(() => {
+          // Extract category links from the now-loaded library page
+          extractCategoryLinksFromLibrary();
+          
+          // Then open our custom modal overlay
+          openLibraryOverlay();
+        }, 500);
+      }); // Don't use capture phase, let original handler run first
     }
   });
 
@@ -1890,14 +1893,1152 @@ function setupLibraryListener(): void {
     const browseBtn = document.querySelector('button[aria-label="Browse"]') as HTMLButtonElement;
     if (browseBtn && !browseBtn.classList.contains('library-hooked')) {
       browseBtn.classList.add('library-hooked');
-      browseBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openLibraryOverlay();
+      browseBtn.addEventListener('click', () => {
         console.log("[Custom Library] Browse button clicked, opening library overlay");
-      }, true);
+        
+        // Wait a bit for the original library page to load
+        setTimeout(() => {
+          // Extract category links from the now-loaded library page
+          extractCategoryLinksFromLibrary();
+          
+          // Then open our custom modal overlay
+          openLibraryOverlay();
+        }, 500);
+      });
     }
   }, 500);
+}
+
+/**
+ * Extracts category links from the loaded library page
+ * Looks for <a> tags in the browse/library view
+ */
+function extractCategoryLinksFromLibrary(): void {
+  console.log("[Custom Library] Extracting links from library page...");
+  
+  // Find all links in the main content area (they should be loaded now)
+  // Spotify puts browse categories in <a> tags with specific href patterns
+  const allLinks = document.querySelectorAll('a[href*="/genre/"], a[href*="/playlist/"], a[href="/concerts"]');
+  
+  console.log(`[Custom Library] Found ${allLinks.length} category links in library page`);
+  
+  // Update the global library categories with the actual links found
+  // This gets the hrefs from the live DOM
+  const updatedCategories: LibraryCategory[] = [];
+  
+  allLinks.forEach(link => {
+    const title = link.textContent?.trim() || '';
+    const href = link.getAttribute('href') || '';
+    const image = link.querySelector('img')?.src || '';
+    
+    if (title && href) {
+      // Find or create a category for this item
+      let category = updatedCategories.find(c => c.name === 'Browsing');
+      if (!category) {
+        category = {
+          name: 'Browsing',
+          items: []
+        };
+        updatedCategories.push(category);
+      }
+      
+      category.items.push({
+        title,
+        href,
+        color: 'rgb(141, 103, 171)', // Default color
+        image
+      });
+    }
+  });
+  
+  if (updatedCategories.length > 0) {
+    console.log(`[Custom Library] Successfully extracted ${allLinks.length} category links from library page`);
+    // Update the display - refresh the carousel with the new items
+    refreshLibraryCarousel(updatedCategories);
+  }
+}
+
+/**
+ * Refreshes the library carousel with new category items
+ */
+function refreshLibraryCarousel(categories: LibraryCategory[]): void {
+  const content = document.querySelector('.library-content');
+  if (!content) return;
+  
+  console.log("[Custom Library] Refreshing carousel with extracted links");
+  
+  // Clear existing content
+  content.innerHTML = '';
+  
+  // Merge with original categories and add extracted ones
+  const mergedCategories = [...libraryCategories, ...categories];
+  
+  mergedCategories.forEach(category => {
+    content.appendChild(createCarousel(category));
+  });
+}
+
+// ============================================
+// CUSTOM SIDEBAR
+// ============================================
+
+interface SidebarCategory {
+  name: string;
+  type: string;
+  icon: string;
+  isExpanded: boolean;
+  items: Array<{
+    title: string;
+    subtitle: string;
+    image: string;
+    uri: string;
+  }>;
+}
+
+let sidebarCategories: SidebarCategory[] = [];
+let sidebarUpdateInterval: number | null = null;
+let libraryItemsMap: Map<string, HTMLElement> = new Map();
+let isUsingAPIData: boolean = false; // Flag to track if we successfully loaded from API
+
+/**
+ * Attempts to load library items from Spotify's internal APIs
+ * Falls back to visible DOM items if API access fails
+ */
+function loadAllLibraryItems(): Promise<void> {
+  return new Promise((resolve) => {
+    console.log("[Custom Sidebar] Attempting to load library items from Spotify APIs...");
+    
+    // Try accessing Spotify's internal Platform API
+    try {
+      // Check if Spicetify has Platform API access
+      if (typeof Spicetify !== 'undefined' && Spicetify.Platform) {
+        console.log("[Custom Sidebar] Found Spicetify.Platform API, attempting to fetch library...");
+        
+        // Try to get library from Platform API
+        const libraryAPI = Spicetify.Platform?.LibraryAPI;
+        if (libraryAPI) {
+          console.log("[Custom Sidebar] Found LibraryAPI, fetching items...");
+          
+          // Try different methods to get library contents
+          // APIs might need parameters like {limit: 1000} or filters
+          console.log("[Custom Sidebar] Exploring LibraryAPI methods:", Object.keys(libraryAPI).slice(0, 20));
+          
+          Promise.all([
+            libraryAPI.getContents?.({ limit: 1000 }).catch(() => null),
+            libraryAPI.getTracks?.({ limit: 1000 }).catch(() => null),
+            libraryAPI.getAlbums?.({ limit: 1000 }).catch(() => null),
+            libraryAPI.getPlaylists?.({ limit: 1000 }).catch(() => null),
+          ]).then((results) => {
+            const [contentsResult] = results;
+            let allItems: any[] = [];
+            
+            if (contentsResult && contentsResult.items && contentsResult.items.length > 0) {
+              console.log(`[Custom Sidebar] ✅ Successfully fetched ${contentsResult.items.length} library items via API`);
+              console.log(`[Custom Sidebar] Total library size: ${contentsResult.unfilteredTotalLength} items`);
+              allItems = [...contentsResult.items];
+
+              // Add Liked Songs at the beginning if _likedSongsUri exists
+              if (libraryAPI._likedSongsUri) {
+                console.log("[Custom Sidebar] Found _likedSongsUri, adding Liked Songs to sidebar...");
+                const likedSongsUri = libraryAPI._likedSongsUri;
+
+                // Create a synthetic Liked Songs entry
+                allItems.unshift({
+                  name: "Liked Songs",
+                  type: "playlist",
+                  uri: likedSongsUri,
+                  owner: { name: "Spotify" },
+                  images: [{ url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%231DB954' d='M15.724 4.22A4.313 4.313 0 0 0 12.192.814a4.269 4.269 0 0 0-3.622 1.13.837.837 0 0 1-1.14 0 4.272 4.272 0 0 0-6.21 5.855l5.916 7.05a1.128 1.128 0 0 0 1.727 0l5.916-7.05a4.228 4.228 0 0 0 .945-3.577z'/%3E%3C/svg%3E" }]
+                });
+                console.log(`[Custom Sidebar] ✅ Added Liked Songs to sidebar`);
+                console.log(`[Custom Sidebar] Total items now: ${allItems.length}`);
+              } else {
+                console.log("[Custom Sidebar] _likedSongsUri not found in LibraryAPI");
+              }
+              
+              // Process all items including Liked Songs
+              processAPILibraryItems(allItems);
+            } else {
+              console.log("[Custom Sidebar] No items returned from API, falling back to DOM extraction");
+              resolve();
+            }
+          }).catch((err) => {
+            console.log("[Custom Sidebar] LibraryAPI calls failed:", err);
+            resolve();
+          });
+          return;
+        }
+      }
+      
+      // Check global Spotify object
+      if (typeof window !== 'undefined' && (window as any).Spotify) {
+        console.log("[Custom Sidebar] Found window.Spotify, exploring...");
+        const spotifyObj = (window as any).Spotify;
+        console.log("[Custom Sidebar] Spotify object keys:", Object.keys(spotifyObj).slice(0, 10));
+      }
+      
+    } catch (error) {
+      console.log("[Custom Sidebar] Error accessing Spotify internals:", error);
+    }
+    
+    // Fallback: Accept that we can only see visible items
+    console.log("[Custom Sidebar] ℹ️  Note: Spotify uses virtual scrolling - only ~11 items visible at once");
+    console.log("[Custom Sidebar] ℹ️  The sidebar will show currently visible items only");
+    console.log("[Custom Sidebar] ℹ️  Items will update as you scroll the original library");
+    
+    resolve();
+  });
+}
+
+/**
+ * Processes library items from the API
+ */
+function processAPILibraryItems(apiItems: any[]): void {
+  console.log("[Custom Sidebar] Processing API library items...");
+  
+  const categories: { [key: string]: SidebarCategory } = {
+    likedSongs: {
+      name: "Liked Songs",
+      type: "likedSongs",
+      icon: `<svg viewBox="0 0 16 16"><path d="M15.724 4.22A4.313 4.313 0 0 0 12.192.814a4.269 4.269 0 0 0-3.622 1.13.837.837 0 0 1-1.14 0 4.272 4.272 0 0 0-6.21 5.855l5.916 7.05a1.128 1.128 0 0 0 1.727 0l5.916-7.05a4.228 4.228 0 0 0 .945-3.577z"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    pinned: {
+      name: "Pinned & Saved",
+      type: "pinned",
+      icon: `<svg viewBox="0 0 16 16"><path d="M8.822.797a2.72 2.72 0 0 1 3.847 0l2.534 2.533a2.72 2.72 0 0 1 0 3.848l-3.678 3.678-1.337 4.988-4.486-4.486L1.28 15.78a.75.75 0 0 1-1.06-1.06l4.422-4.422L.156 5.812l4.987-1.337L8.822.797z"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    playlists: {
+      name: "Playlists",
+      type: "playlist",
+      icon: `<svg viewBox="0 0 16 16"><path d="M15 15H1v-1.5h14V15zm0-4.5H1V9h14v1.5zm-14-7A2.5 2.5 0 0 1 3.5 1h9a2.5 2.5 0 0 1 0 5h-9A2.5 2.5 0 0 1 1 3.5z"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    albums: {
+      name: "Albums",
+      type: "album",
+      icon: `<svg viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"/><path d="M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M5 8a3 3 0 1 1 6 0 3 3 0 0 1-6 0"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    podcasts: {
+      name: "Podcasts & Shows",
+      type: "podcast",
+      icon: `<svg viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m3.669 11.538a1 1 0 0 1-1.375.417c-1.011-.616-2.277-.904-3.496-.69-1.074.186-2.09.685-2.882 1.414a1 1 0 0 1-1.408-1.416A7.75 7.75 0 0 1 6.57 9.31c1.496-.262 3.044.075 4.32.907a1 1 0 0 1 .417 1.375m1.853-2.883a1 1 0 0 1-1.375.417c-1.011-.616-2.277-.904-3.496-.69a6.75 6.75 0 0 0-2.914 1.414 1 1 0 0 1-1.408-1.416 8.75 8.75 0 0 1 3.793-1.841c1.496-.262 3.044.075 4.32.907a1 1 0 0 1 .417 1.375M13.979 5.7a1 1 0 0 1-1.375.417c-1.011-.616-2.277-.904-3.496-.69a5.75 5.75 0 0 0-2.914 1.414 1 1 0 0 1-1.408-1.416 7.75 7.75 0 0 1 3.793-1.841c1.496-.262 3.044.075 4.32.907a1 1 0 0 1 .417 1.375"/></svg>`,
+      isExpanded: true,
+      items: []
+    }
+  };
+
+  libraryItemsMap.clear();
+  
+  let processedCount = 0;
+  
+  apiItems.forEach((item) => {
+    try {
+      // API items have structure: { type, uri, name, owner, images, ... }
+      const type = item.type?.toLowerCase() || '';
+      const uri = item.uri || '';
+      const name = item.name || '';
+      const owner = item.owner?.name || item.artists?.[0]?.name || '';
+      const image = item.images?.[0]?.url || item.image?.url || '';
+      const addedAt = item.addedAt || '';
+      
+      if (!name || !uri) return;
+      
+      // Determine category based on type, name, and pinned status
+      let category = 'playlists';
+      
+      // Check for Liked Songs (by name or special markers)
+      if (name.toLowerCase() === 'liked songs' || name.toLowerCase() === 'liked tracks' || uri.includes('37i9dQZF1DXcBWIGoYsB')) {
+        category = 'likedSongs';
+      }
+      // Check if item is pinned (pinned items have addedAt date that's very old or specific marker)
+      else if (addedAt === '1970-01-01T00:00:00Z' || item.pin || item.pinned) {
+        category = 'pinned';
+      }
+      else if (type === 'album') {
+        category = 'albums';
+      } else if (type === 'show' || type === 'episode' || type === 'podcast') {
+        category = 'podcasts';
+      } else if (type === 'playlist' || type === 'collection') {
+        category = 'playlists';
+      }
+      
+      // Create subtitle similar to Spotify's format
+      const subtitle = owner ? `${type.charAt(0).toUpperCase() + type.slice(1)} • ${owner}` : type.charAt(0).toUpperCase() + type.slice(1);
+      
+      categories[category].items.push({
+        title: name,
+        subtitle: subtitle,
+        image: image,
+        uri: uri
+      });
+      
+      processedCount++;
+    } catch (error) {
+      console.log("[Custom Sidebar] Error processing API item:", error);
+    }
+  });
+  
+  sidebarCategories = Object.values(categories).filter(cat => cat.items.length > 0);
+  const categoryBreakdown = sidebarCategories.map(c => `${c.name} (${c.items.length})`).join(", ");
+  console.log(`[Custom Sidebar] ✅ Processed ${processedCount} API items into categories: ${categoryBreakdown}`);
+  
+  // Mark that we're using API data
+  isUsingAPIData = true;
+  
+  // Update the sidebar immediately with API data
+  updateCustomSidebar();
+}
+
+/**
+ * Extracts library items from the DOM
+ */
+function extractLibraryItems(): void {
+  // Don't overwrite API data with DOM data
+  if (isUsingAPIData) {
+    console.log("[Custom Sidebar] Skipping DOM extraction - using API data");
+    return;
+  }
+  
+  console.log("[Custom Sidebar] Extracting library items...");
+  
+  const categories: { [key: string]: SidebarCategory } = {
+    pinned: {
+      name: "Pinned & Saved",
+      type: "pinned",
+      icon: `<svg viewBox="0 0 16 16"><path d="M8.822.797a2.72 2.72 0 0 1 3.847 0l2.534 2.533a2.72 2.72 0 0 1 0 3.848l-3.678 3.678-1.337 4.988-4.486-4.486L1.28 15.78a.75.75 0 0 1-1.06-1.06l4.422-4.422L.156 5.812l4.987-1.337L8.822.797z"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    playlists: {
+      name: "Playlists",
+      type: "playlist",
+      icon: `<svg viewBox="0 0 16 16"><path d="M15 15H1v-1.5h14V15zm0-4.5H1V9h14v1.5zm-14-7A2.5 2.5 0 0 1 3.5 1h9a2.5 2.5 0 0 1 0 5h-9A2.5 2.5 0 0 1 1 3.5z"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    albums: {
+      name: "Albums",
+      type: "album",
+      icon: `<svg viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"/><path d="M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M5 8a3 3 0 1 1 6 0 3 3 0 0 1-6 0"/></svg>`,
+      isExpanded: true,
+      items: []
+    },
+    podcasts: {
+      name: "Podcasts & Shows",
+      type: "podcast",
+      icon: `<svg viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m3.669 11.538a1 1 0 0 1-1.375.417c-1.011-.616-2.277-.904-3.496-.69-1.074.186-2.09.685-2.882 1.414a1 1 0 0 1-1.408-1.416A7.75 7.75 0 0 1 6.57 9.31c1.496-.262 3.044.075 4.32.907a1 1 0 0 1 .417 1.375m1.853-2.883a1 1 0 0 1-1.375.417c-1.011-.616-2.277-.904-3.496-.69a6.75 6.75 0 0 0-2.914 1.414 1 1 0 0 1-1.408-1.416 8.75 8.75 0 0 1 3.793-1.841c1.496-.262 3.044.075 4.32.907a1 1 0 0 1 .417 1.375M13.979 5.7a1 1 0 0 1-1.375.417c-1.011-.616-2.277-.904-3.496-.69a5.75 5.75 0 0 0-2.914 1.414 1 1 0 0 1-1.408-1.416 7.75 7.75 0 0 1 3.793-1.841c1.496-.262 3.044.075 4.32.907a1 1 0 0 1 .417 1.375"/></svg>`,
+      isExpanded: true,
+      items: []
+    }
+  };
+
+  libraryItemsMap.clear();
+
+  // Find all library items from the library container
+  let libraryItems = document.querySelectorAll('.main-yourLibraryX-listItem');
+  
+  // Debug: log the actual HTML structure to understand what's available
+  if (libraryItems.length > 0) {
+    console.log("[Custom Sidebar] Sample item HTML:", (libraryItems[0] as HTMLElement).outerHTML.substring(0, 200));
+  }
+  
+  console.log(`[Custom Sidebar] Found ${libraryItems.length} total library items`);
+  
+  let validItemsCount = 0;
+  
+  libraryItems.forEach((item) => {
+    const titleEl = item.querySelector('[data-encore-id="listRowTitle"]');
+    const subtitleEl = item.querySelector('[data-encore-id="listRowSubtitle"]');
+    const imageEl = item.querySelector('.main-image-image') as HTMLImageElement;
+    
+    if (!titleEl || !subtitleEl) {
+      console.log("[Custom Sidebar] Skipping item - missing title or subtitle element");
+      return;
+    }
+    
+    const title = titleEl.textContent?.trim() || '';
+    const subtitle = subtitleEl.textContent?.trim() || '';
+    const image = imageEl?.src || '';
+    
+    if (!title) {
+      console.log("[Custom Sidebar] Skipping item - empty title");
+      return;
+    }
+    
+    validItemsCount++;
+    
+    // Create a unique key combining title and subtitle
+    const itemKey = `${title}:${subtitle}`;
+    
+    // Store the reference to the original item element for click handling
+    libraryItemsMap.set(itemKey, item as HTMLElement);
+    
+    // Categorize based on subtitle content - the subtitle format is consistent: "Type • Creator/Artist"
+    const subtitleLower = subtitle.toLowerCase();
+    let category = 'playlists'; // default
+    
+    // Check for pinned items first
+    if (subtitleLower.includes('pinned') || item.getAttribute('aria-label')?.toLowerCase().includes('pinned')) {
+      category = 'pinned';
+    }
+    // Check subtitle for type keywords - ORDER MATTERS! Check playlist first since 'PinnedPlaylist' contains both
+    else if (subtitleLower.includes('playlist')) {
+      category = 'playlists';
+    } else if (subtitleLower.includes('album')) {
+      category = 'albums';
+    } else if (subtitleLower.includes('podcast') || subtitleLower.includes('show') || subtitleLower.includes('episode')) {
+      category = 'podcasts';
+    } else {
+      // Fallback: Check row classes only if subtitle gave no match
+      const rowClasses = item.className;
+      if (rowClasses.includes('album')) {
+        category = 'albums';
+      } else if (rowClasses.includes('episode') || rowClasses.includes('podcast')) {
+        category = 'podcasts';
+      }
+      // Otherwise remains 'playlists' (default)
+    }
+    
+    categories[category].items.push({ 
+      title, 
+      subtitle, 
+      image, 
+      uri: itemKey 
+    });
+    
+    console.log(`[Custom Sidebar] Item: "${title}" | "${subtitle}" | Category: ${category}`);
+  });
+
+  sidebarCategories = Object.values(categories).filter(cat => cat.items.length > 0);
+  const categoryBreakdown = sidebarCategories.map(c => `${c.name} (${c.items.length})`).join(", ");
+  console.log(`[Custom Sidebar] Extracted ${validItemsCount} valid items into categories: ${categoryBreakdown}`);
+}
+
+/**
+ * Searches sidebar items across all categories
+ */
+function searchSidebarItems(query: string): void {
+  const normalizedQuery = query.toLowerCase().trim();
+  const sidebar = document.getElementById('custom-sidebar-container');
+  if (!sidebar) return;
+  
+  // Handle standalone Liked Songs item
+  const standaloneItem = sidebar.querySelector('.custom-sidebar-standalone-item');
+  if (standaloneItem) {
+    const title = standaloneItem.querySelector('.custom-sidebar-item-title')?.textContent || '';
+    const subtitle = standaloneItem.querySelector('.custom-sidebar-item-subtitle')?.textContent || '';
+    const matchesQuery = 
+      title.toLowerCase().includes(normalizedQuery) ||
+      subtitle.toLowerCase().includes(normalizedQuery);
+    
+    if (normalizedQuery === '' || matchesQuery) {
+      (standaloneItem as HTMLElement).style.display = 'flex';
+    } else {
+      (standaloneItem as HTMLElement).style.display = 'none';
+    }
+  }
+  
+  const folders = sidebar.querySelectorAll('.custom-sidebar-folder');
+  
+  // Get categories excluding likedSongs (which is rendered as standalone)
+  const folderCategories = sidebarCategories.filter(cat => cat.type !== 'likedSongs');
+  
+  folders.forEach((folderEl, folderIndex) => {
+    const category = folderCategories[folderIndex];
+    if (!category) return;
+    
+    const items = folderEl.querySelectorAll('.custom-sidebar-item');
+    let visibleCount = 0;
+    
+    items.forEach((itemEl, itemIndex) => {
+      const item = category.items[itemIndex];
+      if (!item) return;
+      
+      const matchesQuery = 
+        item.title.toLowerCase().includes(normalizedQuery) ||
+        item.subtitle.toLowerCase().includes(normalizedQuery);
+      
+      if (normalizedQuery === '' || matchesQuery) {
+        (itemEl as HTMLElement).style.display = 'flex';
+        visibleCount++;
+      } else {
+        (itemEl as HTMLElement).style.display = 'none';
+      }
+    });
+    
+    // Show/hide category based on visible items
+    const header = folderEl.querySelector('.custom-sidebar-folder-header') as HTMLElement;
+    const content = folderEl.querySelector('.custom-sidebar-folder-content') as HTMLElement;
+    
+    if (visibleCount === 0 && normalizedQuery !== '') {
+      // Hide folder if no items match
+      folderEl.style.display = 'none';
+    } else {
+      folderEl.style.display = 'block';
+      // Auto-expand folders when searching
+      if (normalizedQuery !== '' && !category.isExpanded) {
+        category.isExpanded = true;
+        header?.querySelector('.custom-sidebar-folder-arrow')?.classList.add('expanded');
+        if (content) content.style.display = 'block';
+      }
+    }
+    
+    // Update item count for display
+    const countEl = header?.querySelector('.custom-sidebar-folder-count');
+    if (countEl && visibleCount > 0) {
+      countEl.textContent = visibleCount.toString();
+    } else if (countEl) {
+      countEl.textContent = category.items.length.toString();
+    }
+  });
+}
+
+/**
+ * Creates a folder category element
+ */
+function createFolderCategory(category: SidebarCategory): HTMLElement {
+  const folder = document.createElement('div');
+  folder.className = 'custom-sidebar-folder';
+  
+  // Folder header
+  const header = document.createElement('div');
+  header.className = 'custom-sidebar-folder-header';
+  header.innerHTML = `
+    <div class="custom-sidebar-folder-icon">${category.icon}</div>
+    <span class="custom-sidebar-folder-title">${category.name}</span>
+    <span class="custom-sidebar-folder-count">${category.items.length}</span>
+    <div class="custom-sidebar-folder-arrow ${category.isExpanded ? 'expanded' : ''}">
+      <svg viewBox="0 0 16 16"><path d="M4.97.47a.75.75 0 0 0 0 1.06L11.44 8l-6.47 6.47a.75.75 0 1 0 1.06 1.06L13.56 8 6.03.47a.75.75 0 0 0-1.06 0"></path></svg>
+    </div>
+  `;
+  
+  header.addEventListener('click', () => {
+    category.isExpanded = !category.isExpanded;
+    header.querySelector('.custom-sidebar-folder-arrow')?.classList.toggle('expanded');
+    content.style.display = category.isExpanded ? 'block' : 'none';
+  });
+  
+  folder.appendChild(header);
+  
+  // Folder content
+  const content = document.createElement('div');
+  content.className = 'custom-sidebar-folder-content';
+  content.style.display = category.isExpanded ? 'block' : 'none';
+  
+  category.items.forEach((item) => {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'custom-sidebar-item';
+    itemEl.innerHTML = `
+      <img src="${item.image}" alt="${item.title}" class="custom-sidebar-item-image" />
+      <div class="custom-sidebar-item-info">
+        <div class="custom-sidebar-item-title">${item.title}</div>
+        <div class="custom-sidebar-item-subtitle">${item.subtitle}</div>
+      </div>
+    `;
+    
+    itemEl.addEventListener('click', () => {
+      // Convert Spotify URI to navigation path
+      if (item.uri) {
+        try {
+          let path = '';
+          
+          // Special handling for Liked Songs
+          if (item.title === 'Liked Songs') {
+            console.log("[Custom Sidebar] Navigating to Liked Songs collection...");
+            path = '/collection/tracks';
+          } else {
+            // Parse Spotify URI format: spotify:type:id
+            const uriParts = item.uri.split(':');
+            
+            if (uriParts[0] !== 'spotify') {
+              console.log("[Custom Sidebar] Invalid URI format:", item.uri);
+              return;
+            }
+            
+            // Handle standard format: spotify:type:id
+            if (uriParts.length >= 3) {
+              const type = uriParts[1];
+              const id = uriParts[2];
+              path = `/${type}/${id}`;
+            } else {
+              console.log("[Custom Sidebar] Could not parse URI:", item.uri);
+              return;
+            }
+          }
+          
+          // Navigate using History API
+          if (Spicetify?.Platform?.History && path) {
+            Spicetify.Platform.History.push(path);
+            console.log("[Custom Sidebar] Navigated to:", item.title, path);
+          } else if (!path) {
+            console.log("[Custom Sidebar] No path generated for URI:", item.uri);
+          } else {
+            console.log("[Custom Sidebar] History API not available");
+          }
+        } catch (error) {
+          console.log("[Custom Sidebar] Navigation error:", error);
+        }
+      }
+    });
+    
+    content.appendChild(itemEl);
+  });
+  
+  folder.appendChild(content);
+  return folder;
+}
+
+/**
+ * Creates the custom sidebar
+ */
+function createCustomSidebar(): HTMLElement {
+  const sidebar = document.createElement('div');
+  sidebar.id = 'custom-sidebar-container';
+  sidebar.className = 'custom-sidebar-container';
+  
+  // Sidebar header
+  const header = document.createElement('div');
+  header.className = 'custom-sidebar-header';
+  
+  // Header top with title and create button
+  const headerTop = document.createElement('div');
+  headerTop.className = 'custom-sidebar-header-top';
+  headerTop.innerHTML = `
+    <h2>Your Library</h2>
+    <button type="button" class="custom-sidebar-create-btn" aria-label="Create" title="Create playlist">
+      <svg data-encore-id="icon" role="img" aria-hidden="true" viewBox="0 0 16 16">
+        <path d="M15.25 8a.75.75 0 0 1-.75.75H8.75v5.75a.75.75 0 0 1-1.5 0V8.75H1.5a.75.75 0 0 1 0-1.5h5.75V1.5a.75.75 0 0 1 1.5 0v5.75h5.75a.75.75 0 0 1 .75.75"></path>
+      </svg>
+    </button>
+  `;
+  header.appendChild(headerTop);
+  
+  // Search container
+  const searchContainer = document.createElement('div');
+  searchContainer.className = 'custom-sidebar-search-container';
+  searchContainer.innerHTML = `
+    <svg class="custom-sidebar-search-icon" viewBox="0 0 24 24">
+      <path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+    </svg>
+    <input type="text" class="custom-sidebar-search-input" placeholder="Search your library..." />
+  `;
+  header.appendChild(searchContainer);
+  
+  sidebar.appendChild(header);
+  
+  // Add create button click handler
+  const createBtn = headerTop.querySelector('.custom-sidebar-create-btn') as HTMLButtonElement;
+  if (createBtn) {
+    createBtn.addEventListener('click', () => {
+      const originalCreateBtn = document.querySelector('[aria-label="Create"]') as HTMLButtonElement;
+      if (originalCreateBtn) {
+        originalCreateBtn.click();
+      }
+    });
+  }
+  
+  // Add search input event listener
+  const searchInput = searchContainer.querySelector('.custom-sidebar-search-input') as HTMLInputElement;
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      searchSidebarItems((e.target as HTMLInputElement).value);
+    });
+  }
+  
+  // Sidebar content
+  const content = document.createElement('div');
+  content.className = 'custom-sidebar-content';
+  sidebar.appendChild(content);
+  
+  // Add resize handle
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'custom-sidebar-resize-handle';
+  sidebar.appendChild(resizeHandle);
+  
+  // Implement resizing
+  let isResizing = false;
+  let startX = 0;
+  let startWidth = 0;
+  
+  resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
+    isResizing = true;
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mousemove', (e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const diff = e.clientX - startX;
+    const newWidth = Math.max(200, Math.min(600, startWidth + diff)); // Min 200px, max 600px
+    
+    sidebar.style.width = newWidth + 'px';
+    
+    // Update main content margin and max-width dynamically
+    const mainView = document.querySelector('.Root__main-view') as HTMLElement;
+    if (mainView) {
+      mainView.style.setProperty('margin-left', newWidth + 'px', 'important');
+      mainView.style.setProperty('max-width', `calc(100vw - ${newWidth}px)`, 'important');
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    }
+  });
+  
+  return sidebar;
+}
+
+/**
+ * Updates the custom sidebar content
+ */
+function updateCustomSidebar(): void {
+  const sidebar = document.getElementById('custom-sidebar-container');
+  if (!sidebar) return;
+  
+  const content = sidebar.querySelector('.custom-sidebar-content');
+  if (!content) return;
+  
+  // Preserve search input value before clearing
+  const searchInput = sidebar.querySelector('.custom-sidebar-search-input') as HTMLInputElement;
+  const currentSearchValue = searchInput?.value || '';
+  
+  content.innerHTML = '';
+  
+  // Find and render Liked Songs as a standalone item first
+  const likedSongsCategory = sidebarCategories.find(cat => cat.type === 'likedSongs');
+  if (likedSongsCategory && likedSongsCategory.items.length > 0) {
+    const likedSongsItem = likedSongsCategory.items[0];
+    const standaloneItem = document.createElement('div');
+    standaloneItem.className = 'custom-sidebar-standalone-item';
+    standaloneItem.innerHTML = `
+      <img src="${likedSongsItem.image}" alt="${likedSongsItem.title}" class="custom-sidebar-item-image" />
+      <div class="custom-sidebar-item-info">
+        <div class="custom-sidebar-item-title">${likedSongsItem.title}</div>
+        <div class="custom-sidebar-item-subtitle">${likedSongsItem.subtitle}</div>
+      </div>
+    `;
+    
+    standaloneItem.addEventListener('click', () => {
+      if (Spicetify?.Platform?.History) {
+        Spicetify.Platform.History.push('/collection/tracks');
+        console.log("[Custom Sidebar] Navigated to Liked Songs: /collection/tracks");
+      }
+    });
+    
+    content.appendChild(standaloneItem);
+  }
+  
+  // Render other categories as folders
+  const otherCategories = sidebarCategories.filter(cat => cat.type !== 'likedSongs');
+  otherCategories.forEach((category) => {
+    content.appendChild(createFolderCategory(category));
+  });
+  
+  // Re-apply search filter if there's an active search
+  if (currentSearchValue) {
+    searchSidebarItems(currentSearchValue);
+  }
+}
+
+/**
+ * Injects CSS styles for the custom sidebar
+ */
+function injectCustomSidebarStyles(): void {
+  let styleElement = document.getElementById("custom-sidebar-styles");
+  if (!styleElement) {
+    styleElement = document.createElement("style");
+    styleElement.id = "custom-sidebar-styles";
+    document.head.appendChild(styleElement);
+  }
+
+  styleElement.textContent = `
+    /* Hide original sidebar */
+    .Root__nav-bar {
+      display: none !important;
+    }
+
+    /* Custom Sidebar Container */
+    .custom-sidebar-container {
+      position: fixed;
+      left: 0;
+      top: 60px;
+      width: 280px;
+      height: calc(100vh - 150px);
+      background: #000000;
+      border-right: 1px solid #282828;
+      display: flex;
+      flex-direction: column;
+      z-index: 9;
+      overflow: hidden;
+      resize: horizontal;
+    }
+
+    /* Resizable edge */
+    .custom-sidebar-resize-handle {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 4px;
+      height: 100%;
+      cursor: col-resize;
+      background: transparent;
+      transition: background 0.2s;
+      z-index: 10;
+    }
+
+    .custom-sidebar-resize-handle:hover {
+      background: #1db954;
+    }
+
+    /* Sidebar Header */
+    .custom-sidebar-header {
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid #282828;
+      flex-shrink: 0;
+      gap: 0;
+    }
+
+    .custom-sidebar-header-top {
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .custom-sidebar-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+      flex: 1;
+    }
+
+    /* Search Container */
+    .custom-sidebar-search-container {
+      position: relative;
+      padding: 8px 16px;
+    }
+
+    .custom-sidebar-search-input {
+      width: 100%;
+      padding: 8px 12px 8px 36px;
+      background: #282828;
+      border: 1px solid #404040;
+      border-radius: 24px;
+      color: #ffffff;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s;
+      box-sizing: border-box;
+    }
+
+    .custom-sidebar-search-input::placeholder {
+      color: #b3b3b3;
+    }
+
+    .custom-sidebar-search-input:focus {
+      border-color: #1db954;
+      background: #333333;
+    }
+
+    .custom-sidebar-search-icon {
+      position: absolute;
+      left: 24px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      fill: #b3b3b3;
+      pointer-events: none;
+    }
+
+    /* Create Button */
+    .custom-sidebar-create-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.2s;
+      color: #b3b3b3;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .custom-sidebar-create-btn:hover {
+      background: #282828;
+      color: #ffffff;
+    }
+
+    .custom-sidebar-create-btn:active {
+      background: #1db954;
+      color: #000000;
+    }
+
+    .custom-sidebar-create-btn svg {
+      width: 100%;
+      height: 100%;
+      fill: currentColor;
+    }
+
+    /* Sidebar Content */
+    .custom-sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px 0;
+    }
+
+    .custom-sidebar-content::-webkit-scrollbar {
+      width: 12px;
+    }
+
+    .custom-sidebar-content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .custom-sidebar-content::-webkit-scrollbar-thumb {
+      background: #282828;
+      border-radius: 6px;
+      border: 2px solid #000000;
+    }
+
+    .custom-sidebar-content::-webkit-scrollbar-thumb:hover {
+      background: #3e3e3e;
+    }
+
+    /* Folder Category */
+    .custom-sidebar-folder {
+      margin-bottom: 4px;
+    }
+
+    .custom-sidebar-folder-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+      user-select: none;
+    }
+
+    .custom-sidebar-folder-header:hover {
+      background: #1a1a1a;
+    }
+
+    .custom-sidebar-folder-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .custom-sidebar-folder-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: #b3b3b3;
+    }
+
+    .custom-sidebar-folder-title {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .custom-sidebar-folder-count {
+      font-size: 12px;
+      color: #b3b3b3;
+      background: #282828;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+
+    .custom-sidebar-folder-arrow {
+      width: 16px;
+      height: 16px;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+
+    .custom-sidebar-folder-arrow.expanded {
+      transform: rotate(90deg);
+    }
+
+    .custom-sidebar-folder-arrow svg {
+      width: 100%;
+      height: 100%;
+      fill: #b3b3b3;
+    }
+
+    /* Folder Content */
+    .custom-sidebar-folder-content {
+      padding: 4px 0;
+    }
+
+    /* Standalone Item (Liked Songs at top level) */
+    .custom-sidebar-standalone-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      margin: 8px 0;
+      cursor: pointer;
+      transition: background 0.2s;
+      border-bottom: 1px solid #282828;
+    }
+
+    .custom-sidebar-standalone-item:hover {
+      background: #1a1a1a;
+    }
+
+    /* Sidebar Item */
+    .custom-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px 8px 48px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .custom-sidebar-item:hover {
+      background: #1a1a1a;
+    }
+
+    .custom-sidebar-item-image {
+      width: 40px;
+      height: 40px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #282828;
+    }
+
+    .custom-sidebar-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .custom-sidebar-item-title {
+      font-size: 14px;
+      font-weight: 400;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .custom-sidebar-item-subtitle {
+      font-size: 12px;
+      color: #b3b3b3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    /* Adjust main content area */
+    .Root__main-view {
+      margin-left: 280px;
+      max-width: calc(100vw - 280px) !important;
+      box-sizing: border-box !important;
+      width: auto !important;
+      overflow-x: hidden !important;
+    }
+  `;
+}
+
+/**
+ * Initializes the custom sidebar
+ */
+function initializeCustomSidebar(): void {
+  console.log("[Custom Sidebar] Initializing...");
+  console.log("[Custom Sidebar] ⚠️  Note: Due to Spotify's virtual scrolling, only currently visible items (~11) will appear in the sidebar");
+  console.log("[Custom Sidebar] ℹ️  The sidebar will auto-update every 5 seconds as you scroll the original library");
+  
+  // Inject styles first
+  injectCustomSidebarStyles();
+  
+  // Wait for the original sidebar to fully load and populate
+  const checkLibraryLoaded = setInterval(() => {
+    const items = document.querySelectorAll('.main-yourLibraryX-listItem');
+    
+    if (items.length > 5) {
+      clearInterval(checkLibraryLoaded);
+      console.log("[Custom Sidebar] Library loaded with", items.length, "visible items.");
+      
+      // Load all items via API or fallback to DOM extraction
+      loadAllLibraryItems().then(() => {
+        // If API didn't populate categories, fall back to DOM extraction
+        if (!isUsingAPIData) {
+          console.log("[Custom Sidebar] API didn't load data, extracting from DOM...");
+          extractLibraryItems();
+        }
+        
+        // Create and insert sidebar
+        const sidebar = createCustomSidebar();
+        document.body.appendChild(sidebar);
+        
+        // Initial update
+        updateCustomSidebar();
+        
+        // Only set up periodic updates if we're using DOM extraction (API data is static)
+        if (!isUsingAPIData) {
+          console.log("[Custom Sidebar] Using DOM extraction - enabling periodic updates");
+          if (sidebarUpdateInterval) clearInterval(sidebarUpdateInterval);
+          sidebarUpdateInterval = window.setInterval(() => {
+            extractLibraryItems();
+            updateCustomSidebar();
+          }, 2000);
+          console.log("[Custom Sidebar] Auto-updating every 2 seconds");
+        } else {
+          console.log(`[Custom Sidebar] ✅ Using API data - ${sidebarCategories.reduce((sum, cat) => sum + cat.items.length, 0)} items loaded, no periodic updates needed`);
+        }
+      });
+    }
+  }, 500);
+  
+  // Safety timeout after 10 seconds
+  setTimeout(() => {
+    clearInterval(checkLibraryLoaded);
+    if (!document.getElementById('custom-sidebar-container')) {
+      console.log("[Custom Sidebar] Force initializing after timeout");
+      extractLibraryItems();
+      const sidebar = createCustomSidebar();
+      document.body.appendChild(sidebar);
+      updateCustomSidebar();
+      
+      // Still set up updates
+      sidebarUpdateInterval = window.setInterval(() => {
+        extractLibraryItems();
+        updateCustomSidebar();
+      }, 2000);
+    }
+  }, 10000);
 }
 
 /**
@@ -1914,6 +3055,11 @@ async function main(): Promise<void> {
   // Initialize custom library
   injectLibraryStyles();
   setupLibraryListener();
+  
+  // Initialize custom sidebar - wait for Spotify's sidebar to load first
+  setTimeout(() => {
+    initializeCustomSidebar();
+  }, 2000);
   
   waitForPlaybar();
 }
