@@ -143,3 +143,9 @@ Compiled file: marketplace/playbar-toggle.js
 ## Credits
 
 Inspired by https://www.youtube.com/watch?v=suhEIUapSJQ
+
+## Screenshots
+
+![Image #1](src/images/Screenshot%202026-01-31%20at%2011.21.40%E2%80%AFPM.png)
+
+![Image #2](src/images/Screenshot%202026-01-31%20at%2011.22.35%E2%80%AFPM.png)
