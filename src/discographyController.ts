@@ -92,7 +92,7 @@ async function fetchArtistView(artistId: string): Promise<any> {
   }
 
   try {
-    const url = `https://spclient.wg.spotify.com/artistview/v1/artist/${artistId}?market=from_token&limit=200`;
+    const url = `https://spclient.wg.spotify.com/artistview/v1/artist/${artistId}?market=from_token`;
     console.log(`[DiscographyController] Fetching ArtistView: ${url}`);
 
     const data = await Spicetify.CosmosAsync.get(url);
